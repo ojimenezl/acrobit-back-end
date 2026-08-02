@@ -18,7 +18,8 @@ const REPLY = {
   intentar_5: 'Perfecto. En 10 minutos nos vemos; solo te tomará 5 minutos.',
   no_puedo:
     'No pasa nada. La paciencia también es saber cuidarte hoy. Mañana seguimos.',
-  reprogramar: 'Listo. Nueva Hora de Oro guardada. Hoy ya está. Puedes salir tranquilo.',
+  reprogramar:
+    'Listo. Nueva Hora de Oro guardada. Te aviso otra vez 10 minutos antes.',
 } as const;
 
 export type ChatAction =
@@ -59,26 +60,49 @@ export class InteractionsService {
 
     if (!user.welcomeCompleted || !user.goldenHour) return user;
 
+    const t10 = this.minusMinutes(user.goldenHour, 10);
+    const beforeWindow =
+      this.timeToMinutes(time) < this.timeToMinutes(t10);
+
     const existing = user.dailyInteraction;
     if (existing?.localDate === localDate && existing.kind === 't10') {
-      if (
-        !existing.pushSent &&
-        user.notificationsEnabled &&
-        Array.isArray(user.fcmTokens) &&
-        user.fcmTokens.length > 0
-      ) {
-        await this.trySendT10Push(
-          userId,
-          existing.promptText || T10_TEXT,
-          localDate,
-          existing,
-        );
+      const forHour = existing.goldenHour;
+      const hourChanged = !!forHour && forHour !== user.goldenHour;
+
+      // T-10 cerrado, pero reprogramaron a una hora futura → rearmar
+      if (existing.stage === 'done' && (hourChanged || beforeWindow)) {
+        await this.usersService.clearTodayT10Interaction(userId, localDate);
+        if (beforeWindow) {
+          return this.usersService.findById(userId);
+        }
+        // ya estamos en la ventana de la nueva hora → crear T-10 abajo
+      } else if (existing.stage === 'done') {
+        return this.usersService.findById(userId);
+      } else if (!hourChanged) {
+        if (
+          !existing.pushSent &&
+          user.notificationsEnabled &&
+          Array.isArray(user.fcmTokens) &&
+          user.fcmTokens.length > 0
+        ) {
+          await this.trySendT10Push(
+            userId,
+            existing.promptText || T10_TEXT,
+            localDate,
+            existing,
+          );
+        }
+        return this.usersService.findById(userId);
+      } else {
+        // Hora de Oro distinta con T-10 aún abierto → limpiar y recrear
+        await this.usersService.clearTodayT10Interaction(userId, localDate);
+        if (beforeWindow) {
+          return this.usersService.findById(userId);
+        }
       }
-      return this.usersService.findById(userId);
     }
 
-    const t10 = this.minusMinutes(user.goldenHour, 10);
-    if (this.timeToMinutes(time) < this.timeToMinutes(t10)) {
+    if (beforeWindow) {
       return user;
     }
 
@@ -90,6 +114,7 @@ export class InteractionsService {
       promptText,
       actions: ['si', 'no', 'reprogramar'],
       pushSent: false,
+      goldenHour: user.goldenHour,
     };
 
     const msg = {
@@ -171,7 +196,7 @@ export class InteractionsService {
         throw new BadRequestException('Indica la nueva Hora de Oro.');
       }
       const normalized = this.normalizeTime(time);
-      // Reprogramar desde T-10 siempre puede cambiar la hora (persiste en BD).
+      // Reprogramar: nueva hora + limpiar T-10 del día para volver a avisar
       await this.usersService.updateGoldenHour(userId, normalized, localDate);
       await this.appendPair(
         userId,
@@ -179,11 +204,7 @@ export class InteractionsService {
         REPLY.reprogramar,
         now,
       );
-      await this.usersService.setDailyInteraction(userId, {
-        ...di,
-        stage: 'done',
-        actions: [],
-      });
+      await this.usersService.clearTodayT10Interaction(userId, localDate);
     }
   }
 
@@ -256,6 +277,7 @@ export class InteractionsService {
       promptText: string;
       actions: string[];
       pushSent: boolean;
+      goldenHour?: string;
     },
   ) {
     try {

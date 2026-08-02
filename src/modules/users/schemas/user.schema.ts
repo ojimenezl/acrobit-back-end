@@ -188,6 +188,8 @@ export class User {
       promptText: { type: String },
       actions: { type: [String], default: [] },
       pushSent: { type: Boolean, default: false },
+      /** Hora de Oro para la que se armó este T-10 (permite reavisar si cambia). */
+      goldenHour: { type: String },
     },
     required: false,
   })
@@ -198,6 +200,7 @@ export class User {
     promptText: string;
     actions: string[];
     pushSent: boolean;
+    goldenHour?: string;
   };
 }
 
