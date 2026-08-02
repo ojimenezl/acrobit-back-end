@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,13 +18,21 @@ export class AchievementController {
   constructor(private readonly achievementService: AchievementService) {}
 
   @Get()
-  getState(@Req() req: any) {
-    return this.achievementService.getState(req.user.id);
+  getState(@Req() req: any, @Query('localDate') localDate: string) {
+    return this.achievementService.getState(req.user.id, localDate);
   }
 
   @Post('choose')
   @HttpCode(HttpStatus.OK)
-  choose(@Req() req: any, @Body() body: { key?: string }) {
-    return this.achievementService.choose(req.user.id, body?.key || '');
+  async choose(
+    @Req() req: any,
+    @Body() body: { key?: string; adminBypass?: boolean; localDate?: string },
+  ) {
+    await this.achievementService.choose(
+      req.user.id,
+      body?.key || '',
+      !!body?.adminBypass,
+    );
+    return this.achievementService.getState(req.user.id, body?.localDate);
   }
 }

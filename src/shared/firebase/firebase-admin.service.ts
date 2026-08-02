@@ -20,11 +20,36 @@ export class FirebaseAdminService implements OnModuleInit {
     }
 
     const projectId = this.config.get<string>('FIREBASE_PROJECT_ID');
-    const credentialsPath = this.config.get<string>('GOOGLE_APPLICATION_CREDENTIALS');
+    const serviceAccount = this.loadServiceAccount();
 
+    this.app = initializeApp({
+      credential: cert(serviceAccount),
+      projectId: projectId ?? serviceAccount.project_id,
+    });
+
+    this.logger.log('Firebase Admin inicializado correctamente.');
+  }
+
+  /**
+   * En local: archivo JSON (GOOGLE_APPLICATION_CREDENTIALS).
+   * En Vercel: FIREBASE_SERVICE_ACCOUNT_JSON (JSON en una sola línea).
+   */
+  private loadServiceAccount(): Record<string, any> {
+    const jsonInline = this.config.get<string>('FIREBASE_SERVICE_ACCOUNT_JSON');
+    if (jsonInline) {
+      try {
+        return JSON.parse(jsonInline);
+      } catch {
+        throw new Error(
+          'FIREBASE_SERVICE_ACCOUNT_JSON no es un JSON válido.',
+        );
+      }
+    }
+
+    const credentialsPath = this.config.get<string>('GOOGLE_APPLICATION_CREDENTIALS');
     if (!credentialsPath) {
       throw new Error(
-        'Falta GOOGLE_APPLICATION_CREDENTIALS en el .env (ruta al Admin SDK JSON).',
+        'Falta FIREBASE_SERVICE_ACCOUNT_JSON o GOOGLE_APPLICATION_CREDENTIALS.',
       );
     }
 
@@ -35,14 +60,7 @@ export class FirebaseAdminService implements OnModuleInit {
       );
     }
 
-    const serviceAccount = JSON.parse(readFileSync(absolutePath, 'utf8'));
-
-    this.app = initializeApp({
-      credential: cert(serviceAccount),
-      projectId: projectId ?? serviceAccount.project_id,
-    });
-
-    this.logger.log('Firebase Admin inicializado correctamente.');
+    return JSON.parse(readFileSync(absolutePath, 'utf8'));
   }
 
   async verifyIdToken(idToken: string): Promise<DecodedIdToken> {

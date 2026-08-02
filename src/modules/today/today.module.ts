@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from '../users/users.module';
 import { RoutineModule } from '../routine/routine.module';
+import { AchievementModule } from '../achievement/achievement.module';
 import { ReflexionHoy, ReflexionHoySchema } from './schemas/reflexion-hoy.schema';
 import { TodayController } from './today.controller';
 import { TodayService } from './today.service';
@@ -10,6 +11,7 @@ import { TodayService } from './today.service';
   imports: [
     UsersModule,
     RoutineModule,
+    AchievementModule,
     MongooseModule.forFeature([
       { name: ReflexionHoy.name, schema: ReflexionHoySchema },
     ]),

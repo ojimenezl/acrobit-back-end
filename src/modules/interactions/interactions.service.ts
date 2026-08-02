@@ -259,15 +259,17 @@ export class InteractionsService {
     },
   ) {
     try {
-      await this.notificationsService.sendToUser(userId, {
+      const result = await this.notificationsService.sendToUser(userId, {
         title: 'ACROBIT',
         body: `${promptText} [Sí] [No] [Reprogramar]`,
         data: { type: 't10', localDate },
       });
-      await this.usersService.setDailyInteraction(userId, {
-        ...dailyInteraction,
-        pushSent: true,
-      });
+      if ((result?.sent ?? 0) > 0) {
+        await this.usersService.setDailyInteraction(userId, {
+          ...dailyInteraction,
+          pushSent: true,
+        });
+      }
     } catch (err: any) {
       this.logger.warn(`Push T-10 no enviado: ${err?.message}`);
     }

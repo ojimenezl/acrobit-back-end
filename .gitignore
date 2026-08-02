@@ -7,6 +7,7 @@
 # env / secrets
 .env
 .env.local
+scripts/railway-env.json
 **/firebase/*adminsdk*.json
 **/firebase/serviceAccount*.json
 
@@ -17,3 +18,4 @@ npm-debug.log*
 # os / editor
 .DS_Store
 .idea
+.vercel

@@ -9,6 +9,7 @@ import { Model } from 'mongoose';
 import { ReflexionHoy, ReflexionHoyDocument } from './schemas/reflexion-hoy.schema';
 import { UsersService } from '../users/users.service';
 import { RoutineService } from '../routine/routine.service';
+import { AchievementService } from '../achievement/achievement.service';
 import { isValidTimeZone } from '../../shared/time/local-clock';
 
 const SEED: Array<{ day: number; text: string }> = [
@@ -48,6 +49,7 @@ export class TodayService implements OnModuleInit {
     private readonly reflexionModel: Model<ReflexionHoyDocument>,
     private readonly usersService: UsersService,
     private readonly routineService: RoutineService,
+    private readonly achievementService: AchievementService,
   ) {}
 
   async onModuleInit() {
@@ -65,6 +67,7 @@ export class TodayService implements OnModuleInit {
         await this.usersService.updateTimeZone(userId, timeZone);
       }
     }
+    await this.achievementService.touchCalendar(userId, localDate);
     const user = await this.requireUser(userId);
     const habitDay = Math.max(1, user.habitDay || 1);
     const reflection = await this.getReflectionForDay(habitDay);
@@ -103,7 +106,12 @@ export class TodayService implements OnModuleInit {
     if (isValidTimeZone(timeZone)) {
       await this.usersService.updateTimeZone(userId, timeZone);
     }
+    const previousHour = user.goldenHour || null;
     await this.usersService.updateGoldenHour(userId, normalized, localDate);
+    // Nueva hora → permitir otro T-10 ese mismo día
+    if (previousHour !== normalized) {
+      await this.usersService.clearTodayT10Interaction(userId, localDate);
+    }
     return this.getToday(userId, localDate, timeZone);
   }
 
@@ -116,6 +124,7 @@ export class TodayService implements OnModuleInit {
 
     await this.usersService.updateTodayStatus(userId, next, localDate);
     await this.routineService.syncDayStatus(userId, localDate, next);
+    await this.achievementService.syncFromTodayStatus(userId, localDate, next);
     const data = await this.getToday(userId, localDate);
     return {
       ...data,

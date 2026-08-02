@@ -101,6 +101,20 @@ export class UsersService {
       .exec();
   }
 
+  /**
+   * Al cambiar la Hora de Oro desde Hoy, limpia el T-10 del día
+   * para que pueda volver a dispararse con la nueva hora.
+   */
+  async clearTodayT10Interaction(userId: string, localDate: string) {
+    const user = await this.findById(userId);
+    if (!user) return null;
+    const di = user.dailyInteraction;
+    if (!di || di.localDate !== localDate || di.kind !== 't10') return user;
+    return this.userModel
+      .findByIdAndUpdate(userId, { dailyInteraction: null }, { new: true })
+      .exec();
+  }
+
   async updateTimeZone(userId: string, timeZone: string) {
     return this.userModel
       .findByIdAndUpdate(userId, { timeZone }, { new: true })
@@ -152,6 +166,38 @@ export class UsersService {
       .exec();
   }
 
+  /** Reinicia contadores de Logro (elección nueva / admin). */
+  async resetLogroProgress(userId: string) {
+    return this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          logroDay: 1,
+          logroWonDays: [],
+          logroDaysWithoutAdvance: 0,
+          logroLastAdvanceOn: null,
+          logroStagnationOn: null,
+          logroCalendarOn: null,
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
+  async updateLogroProgress(
+    userId: string,
+    data: {
+      logroDay?: number;
+      logroWonDays?: number[];
+      logroDaysWithoutAdvance?: number;
+      logroLastAdvanceOn?: string | null;
+      logroStagnationOn?: string | null;
+      logroCalendarOn?: string | null;
+    },
+  ) {
+    return this.userModel.findByIdAndUpdate(userId, data, { new: true }).exec();
+  }
+
   async updateHabitProgress(
     userId: string,
     data: { habitDay: number; habitStartedOn?: string },
@@ -182,6 +228,12 @@ export class UsersService {
           todayStatusOn: null,
           rutina: null,
           motivatorObject: null,
+          logroDay: 1,
+          logroWonDays: [],
+          logroDaysWithoutAdvance: 0,
+          logroLastAdvanceOn: null,
+          logroStagnationOn: null,
+          logroCalendarOn: null,
           welcomeMessage: null,
           welcomeCompleted: false,
           chatMessages: [],

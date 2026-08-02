@@ -1,0 +1,25 @@
+# Dispara T-10 en Vercel cada 5 minutos (plan Hobby no permite cron cada minuto en Vercel).
+# Requiere secret CRON_SECRET en el repo (Settings → Secrets).
+name: T-10 tick
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call T-10 endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          T10_URL: https://acrobit-back-end.vercel.app/api/internal/t10-tick
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Missing CRON_SECRET secret"
+            exit 1
+          fi
+          curl -fsS -X POST "$T10_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json"

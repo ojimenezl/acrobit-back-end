@@ -132,6 +132,31 @@ export class User {
   })
   motivatorObject?: 'gem' | 'sword' | 'bonsai' | 'diamond';
 
+  /**
+   * Progreso Logro (por usuario). Solo avanza con “Lo logré”.
+   * logroDaysWithoutAdvance: oculto en UI; solo BD.
+   */
+  @Prop({ default: 1, min: 1 })
+  logroDay: number;
+
+  @Prop({ type: [Number], default: [] })
+  logroWonDays: number[];
+
+  @Prop({ default: 0, min: 0 })
+  logroDaysWithoutAdvance: number;
+
+  /** Última fecha local YYYY-MM-DD en la que avanzó (Lo logré). */
+  @Prop({ required: false })
+  logroLastAdvanceOn?: string;
+
+  /** Última fecha local contada como “sin avanzar”. */
+  @Prop({ required: false })
+  logroStagnationOn?: string;
+
+  /** Última fecha local vista por el motor de Logro. */
+  @Prop({ required: false })
+  logroCalendarOn?: string;
+
   @Prop({ type: [String], default: [] })
   fcmTokens: string[];
 
