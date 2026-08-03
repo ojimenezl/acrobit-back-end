@@ -19,11 +19,18 @@ async function bootstrap() {
     }),
   );
 
-  // CORS para permitir al frontend Ionic consumir la API
-  const origins = (config.get<string>('CORS_ORIGIN') ?? '')
+  // CORS: lista en CORS_ORIGIN + orígenes Capacitor (APK / iOS)
+  const configured = (config.get<string>('CORS_ORIGIN') ?? '')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
+  const capacitorOrigins = [
+    'https://localhost',
+    'capacitor://localhost',
+    'http://localhost',
+    'ionic://localhost',
+  ];
+  const origins = [...new Set([...configured, ...capacitorOrigins])];
   app.enableCors({
     origin: origins.length ? origins : true,
     credentials: true,

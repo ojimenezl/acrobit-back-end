@@ -104,7 +104,17 @@ export class FirebaseAdminService implements OnModuleInit {
     return id;
   }
 
-  /** Envía a varios tokens; limpia los inválidos. */
+  /** Códigos FCM que indican token muerto (sí se puede borrar). */
+  private static readonly DEAD_TOKEN_CODES = new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+  ]);
+
+  /**
+   * Envía a varios tokens.
+   * Solo marca como failed (para borrar) los tokens permanentemente inválidos.
+   * Errores transitorios no vacían fcmTokens del usuario.
+   */
   async sendPushToTokens(
     tokens: string[],
     payload: { title: string; body: string; data?: Record<string, string> },
@@ -115,8 +125,11 @@ export class FirebaseAdminService implements OnModuleInit {
         await this.sendPush({ token, ...payload });
         results.success += 1;
       } catch (err: any) {
-        this.logger.warn(`Fallo push token: ${err?.code || err?.message}`);
-        results.failed.push(token);
+        const code = String(err?.code || '');
+        this.logger.warn(`Fallo push token: ${code || err?.message}`);
+        if (FirebaseAdminService.DEAD_TOKEN_CODES.has(code)) {
+          results.failed.push(token);
+        }
       }
     }
     return results;

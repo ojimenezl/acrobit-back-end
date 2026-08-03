@@ -5,9 +5,9 @@ import { InteractionsService } from './interactions.service';
 import { localStampInZone } from '../../shared/time/local-clock';
 
 /**
- * Dispara el trillizo T-10 en el minuto exacto aunque la app esté cerrada.
- * - Local (`nest start`): @Cron cada minuto.
- * - Vercel serverless: el @Cron no corre; usar GET/POST /api/internal/t10-tick.
+ * Dispara el T-10 (−10 min) cada minuto aunque la app esté cerrada.
+ * - Local / Railway: @Cron.
+ * - Vercel serverless: GET/POST /api/internal/t10-tick.
  */
 @Injectable()
 export class T10Scheduler {

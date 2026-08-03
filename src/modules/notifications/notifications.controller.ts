@@ -72,6 +72,11 @@ export class NotificationsController {
     );
   }
 
+  @Get('status')
+  status(@Req() req: any) {
+    return this.notificationsService.getStatus(req.user.id);
+  }
+
   @Post('register-token')
   @HttpCode(HttpStatus.OK)
   registerToken(@Req() req: any, @Body() dto: RegisterFcmTokenDto) {

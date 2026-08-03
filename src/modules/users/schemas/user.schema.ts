@@ -188,6 +188,10 @@ export class User {
       promptText: { type: String },
       actions: { type: [String], default: [] },
       pushSent: { type: Boolean, default: false },
+      /** Chat T-0 (ya es la hora) añadido. */
+      startNotified: { type: Boolean, default: false },
+      /** Push T-0 entregado (misma vía sendToUser que T-10). */
+      startPushSent: { type: Boolean, default: false },
       /** Hora de Oro para la que se armó este T-10 (permite reavisar si cambia). */
       goldenHour: { type: String },
     },
@@ -200,6 +204,8 @@ export class User {
     promptText: string;
     actions: string[];
     pushSent: boolean;
+    startNotified?: boolean;
+    startPushSent?: boolean;
     goldenHour?: string;
   };
 }

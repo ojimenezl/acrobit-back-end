@@ -12,6 +12,10 @@ import { isValidTimeZone } from '../../shared/time/local-clock';
 const T10_TEXT =
   'Faltan 10 minutos para empezar tu hábito. Ánimo, hoy es el día.';
 
+/** Aviso al llegar la Hora de Oro (reutiliza el mismo sendToUser que T-10). */
+const T0_TEXT =
+  'Ya es tu Hora de Oro. Es el momento de empezar tu hábito.';
+
 const REPLY = {
   si: 'Perfecto. En 10 minutos nos vemos.',
   no: 'Está bien. A veces el cuerpo pide pausa. ¿Y si lo intentas solo 5 minutos?',
@@ -29,6 +33,18 @@ export type ChatAction =
   | 'reprogramar'
   | 'intentar_5'
   | 'no_puedo';
+
+type DailyT10 = {
+  localDate: string;
+  kind: 't10';
+  stage: string;
+  promptText: string;
+  actions: string[];
+  pushSent: boolean;
+  startNotified?: boolean;
+  startPushSent?: boolean;
+  goldenHour?: string;
+};
 
 @Injectable()
 export class InteractionsService {
@@ -50,8 +66,9 @@ export class InteractionsService {
   }
 
   /**
-   * Si ya pasó T-10 de la Hora de Oro y aún no hay prompt hoy → crea el aviso
-   * en chat + feed + push (trillizos). También reintenta push si falló antes.
+   * Sincroniza avisos de la Hora de Oro:
+   * - T-10 (−10 min): chat + feed + push  ← flujo estable, no romper
+   * - T-0 (hora exacta): mismo sendToUser, si aún no respondió
    */
   async syncT10(userId: string, localDate: string, localTime: string) {
     this.assertDate(localDate);
@@ -64,41 +81,39 @@ export class InteractionsService {
     const beforeWindow =
       this.timeToMinutes(time) < this.timeToMinutes(t10);
 
-    const existing = user.dailyInteraction;
+    const existing = this.plainDi(user.dailyInteraction);
     if (existing?.localDate === localDate && existing.kind === 't10') {
-      const forHour = existing.goldenHour;
-      const hourChanged = !!forHour && forHour !== user.goldenHour;
+      const hourChanged =
+        !!existing.goldenHour && existing.goldenHour !== user.goldenHour;
 
-      // T-10 cerrado, pero reprogramaron a una hora futura → rearmar
-      if (existing.stage === 'done' && (hourChanged || beforeWindow)) {
+      // Ya cerró el ciclo de esta Hora de Oro
+      if (existing.stage === 'done' && !hourChanged) {
+        return user;
+      }
+
+      // Cambió la Hora de Oro → permitir un T-10 nuevo
+      if (hourChanged) {
         await this.usersService.clearTodayT10Interaction(userId, localDate);
-        if (beforeWindow) {
-          return this.usersService.findById(userId);
-        }
-        // ya estamos en la ventana de la nueva hora → crear T-10 abajo
-      } else if (existing.stage === 'done') {
-        return this.usersService.findById(userId);
-      } else if (!hourChanged) {
+      } else {
+        // Mismo ciclo abierto: reintentar push T-10 si falló
         if (
           !existing.pushSent &&
           user.notificationsEnabled &&
           Array.isArray(user.fcmTokens) &&
           user.fcmTokens.length > 0
         ) {
-          await this.trySendT10Push(
+          await this.trySendTypedPush(
             userId,
             existing.promptText || T10_TEXT,
             localDate,
+            't10',
             existing,
+            'pushSent',
           );
         }
+        // Luego, si ya es la hora, aviso T-0 (misma vía de push)
+        await this.maybeSendStartHour(userId, localDate, time);
         return this.usersService.findById(userId);
-      } else {
-        // Hora de Oro distinta con T-10 aún abierto → limpiar y recrear
-        await this.usersService.clearTodayT10Interaction(userId, localDate);
-        if (beforeWindow) {
-          return this.usersService.findById(userId);
-        }
       }
     }
 
@@ -106,28 +121,85 @@ export class InteractionsService {
       return user;
     }
 
-    const promptText = T10_TEXT;
-    const dailyInteraction = {
+    const dailyInteraction: DailyT10 = {
       localDate,
-      kind: 't10' as const,
-      stage: 'primary' as const,
-      promptText,
+      kind: 't10',
+      stage: 'primary',
+      promptText: T10_TEXT,
       actions: ['si', 'no', 'reprogramar'],
       pushSent: false,
+      startNotified: false,
+      startPushSent: false,
       goldenHour: user.goldenHour,
     };
 
-    const msg = {
-      role: 'assistant' as const,
-      text: promptText,
-      createdAt: new Date(),
-    };
-
-    await this.usersService.appendTripletMessages(userId, [msg]);
+    await this.usersService.appendTripletMessages(userId, [
+      {
+        role: 'assistant' as const,
+        text: T10_TEXT,
+        createdAt: new Date(),
+      },
+    ]);
     await this.usersService.setDailyInteraction(userId, dailyInteraction);
-    await this.trySendT10Push(userId, promptText, localDate, dailyInteraction);
+    await this.trySendTypedPush(
+      userId,
+      T10_TEXT,
+      localDate,
+      't10',
+      dailyInteraction,
+      'pushSent',
+    );
+    await this.maybeSendStartHour(userId, localDate, time);
 
     return this.usersService.findById(userId);
+  }
+
+  /**
+   * T-0: llega la Hora de Oro y el usuario aún no cerró el ciclo.
+   * Mismo flujo que T-10: mensaje en chat + sendToUser (sin atajos).
+   */
+  private async maybeSendStartHour(
+    userId: string,
+    localDate: string,
+    localTime: string,
+  ) {
+    const user = await this.usersService.findById(userId);
+    if (!user?.goldenHour) return;
+
+    let di = this.plainDi(user.dailyInteraction);
+    if (!di || di.localDate !== localDate || di.kind !== 't10') return;
+    if (di.stage === 'done') return;
+    if (this.timeToMinutes(localTime) < this.timeToMinutes(user.goldenHour)) {
+      return;
+    }
+    if (di.startPushSent) return;
+
+    // 1) Chat (una sola vez), igual que al crear el T-10
+    if (!di.startNotified) {
+      await this.usersService.appendTripletMessages(userId, [
+        {
+          role: 'assistant' as const,
+          text: T0_TEXT,
+          createdAt: new Date(),
+        },
+      ]);
+      di = {
+        ...di,
+        startNotified: true,
+        goldenHour: user.goldenHour,
+      };
+      await this.usersService.setDailyInteraction(userId, di);
+    }
+
+    // 2) Push con la MISMA función que T-10 / “Probar notificación”
+    await this.trySendTypedPush(
+      userId,
+      T0_TEXT,
+      localDate,
+      't0',
+      di,
+      'startPushSent',
+    );
   }
 
   /** Resuelve acciones del trillizo (sí/no/reprogramar/…). */
@@ -139,7 +211,7 @@ export class InteractionsService {
   ) {
     this.assertDate(localDate);
     const user = await this.requireUser(userId);
-    const di = user.dailyInteraction;
+    const di = this.plainDi(user.dailyInteraction);
 
     if (!di || di.localDate !== localDate || di.stage === 'done') {
       throw new BadRequestException('No hay una interacción activa.');
@@ -196,7 +268,6 @@ export class InteractionsService {
         throw new BadRequestException('Indica la nueva Hora de Oro.');
       }
       const normalized = this.normalizeTime(time);
-      // Reprogramar: nueva hora + limpiar T-10 del día para volver a avisar
       await this.usersService.updateGoldenHour(userId, normalized, localDate);
       await this.appendPair(
         userId,
@@ -204,6 +275,7 @@ export class InteractionsService {
         REPLY.reprogramar,
         now,
       );
+      // Limpia el T-10 para que vuelva a dispararse con la nueva hora
       await this.usersService.clearTodayT10Interaction(userId, localDate);
     }
   }
@@ -217,7 +289,7 @@ export class InteractionsService {
       };
     }
 
-    const di = user.dailyInteraction;
+    const di = this.plainDi(user.dailyInteraction);
     if (di && di.stage !== 'done' && Array.isArray(di.actions) && di.actions.length) {
       return {
         canInteract: true,
@@ -266,35 +338,56 @@ export class InteractionsService {
     };
   }
 
-  private async trySendT10Push(
+  /**
+   * Única vía de push para T-10 y T-0 (igual que “Probar notificación”).
+   * Fusiona el estado fresco de BD para no pisar flags del otro aviso.
+   */
+  private async trySendTypedPush(
     userId: string,
     promptText: string,
     localDate: string,
-    dailyInteraction: {
-      localDate: string;
-      kind: 't10';
-      stage: string;
-      promptText: string;
-      actions: string[];
-      pushSent: boolean;
-      goldenHour?: string;
-    },
+    type: 't10' | 't0',
+    dailyInteraction: DailyT10,
+    mark: 'pushSent' | 'startPushSent',
   ) {
     try {
       const result = await this.notificationsService.sendToUser(userId, {
         title: 'ACROBIT',
         body: `${promptText} [Sí] [No] [Reprogramar]`,
-        data: { type: 't10', localDate },
+        data: { type, localDate },
       });
       if ((result?.sent ?? 0) > 0) {
+        const freshUser = await this.usersService.findById(userId);
+        const fresh = this.plainDi(freshUser?.dailyInteraction) || dailyInteraction;
         await this.usersService.setDailyInteraction(userId, {
-          ...dailyInteraction,
-          pushSent: true,
+          ...fresh,
+          [mark]: true,
         });
+        this.logger.log(`Push ${type} entregado user=${userId}`);
+      } else {
+        this.logger.warn(`Push ${type} sent=0 user=${userId}`);
       }
     } catch (err: any) {
-      this.logger.warn(`Push T-10 no enviado: ${err?.message}`);
+      this.logger.warn(`Push ${type} no enviado: ${err?.message}`);
     }
+  }
+
+  /** Evita corromper dailyInteraction al hacer spread de subdocumentos Mongoose. */
+  private plainDi(di: any): DailyT10 | null {
+    if (!di) return null;
+    const raw =
+      typeof di.toObject === 'function' ? di.toObject() : { ...di };
+    return {
+      localDate: String(raw.localDate || ''),
+      kind: 't10',
+      stage: String(raw.stage || 'primary'),
+      promptText: String(raw.promptText || T10_TEXT),
+      actions: Array.isArray(raw.actions) ? [...raw.actions] : [],
+      pushSent: !!raw.pushSent,
+      startNotified: !!raw.startNotified,
+      startPushSent: !!raw.startPushSent,
+      goldenHour: raw.goldenHour ? String(raw.goldenHour) : undefined,
+    };
   }
 
   private fallbackDate() {
