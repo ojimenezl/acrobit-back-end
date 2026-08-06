@@ -80,7 +80,9 @@ export class NotificationsController {
   @Post('register-token')
   @HttpCode(HttpStatus.OK)
   registerToken(@Req() req: any, @Body() dto: RegisterFcmTokenDto) {
-    return this.notificationsService.registerToken(req.user.id, dto.token);
+    return this.notificationsService.registerToken(req.user.id, dto.token, {
+      replaceAll: !!dto.replaceAll,
+    });
   }
 
   @Post('disable')

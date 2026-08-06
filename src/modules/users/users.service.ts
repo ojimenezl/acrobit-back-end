@@ -275,6 +275,19 @@ export class UsersService {
       .exec();
   }
 
+  /** Sustituye todos los tokens por uno solo (p. ej. al activar push en el APK). */
+  async replaceFcmToken(userId: string, token: string) {
+    return this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          $set: { fcmTokens: [token], notificationsEnabled: true },
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
   async removeFcmToken(userId: string, token: string) {
     return this.userModel
       .findByIdAndUpdate(

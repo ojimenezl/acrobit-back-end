@@ -4,6 +4,11 @@ export class RegisterFcmTokenDto {
   @IsString()
   @MinLength(20)
   token: string;
+
+  /** Si true, deja solo este token (útil al registrar desde el APK y evitar tokens web viejos). */
+  @IsOptional()
+  @IsBoolean()
+  replaceAll?: boolean;
 }
 
 export class DisableNotificationsDto {

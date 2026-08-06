@@ -16,8 +16,14 @@ export class NotificationsService {
     private readonly firebaseAdmin: FirebaseAdminService,
   ) {}
 
-  async registerToken(userId: string, token: string) {
-    const user = await this.usersService.addFcmToken(userId, token);
+  async registerToken(
+    userId: string,
+    token: string,
+    opts?: { replaceAll?: boolean },
+  ) {
+    const user = opts?.replaceAll
+      ? await this.usersService.replaceFcmToken(userId, token)
+      : await this.usersService.addFcmToken(userId, token);
     if (!user) throw new NotFoundException('Usuario no encontrado.');
 
     // Verifica el token con un push real (si es inválido, no dejamos fcmTokens basura)

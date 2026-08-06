@@ -88,6 +88,15 @@ export class FirebaseAdminService implements OnModuleInit {
         body: params.body,
       },
       data: params.data,
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'acrobit_default',
+          sound: 'default',
+          priority: 'high',
+          defaultVibrateTimings: true,
+        },
+      },
       webpush: {
         notification: {
           title: params.title,
